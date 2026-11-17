@@ -1,60 +1,56 @@
-name: Build Android APK (arm64-v8a)
+name: Android CI
 
 on:
   push:
-    branches: [ main, master ]
+    branches: [ "**" ]
   pull_request:
-    branches: [ main, master ]
+    branches: [ "**" ]
   workflow_dispatch:
+
+permissions:
+  contents: read
 
 jobs:
   build:
-    runs-on: ubuntu-latest
-
-    env:
-      # Убираем привязку к предустановленному NDK 27+, если проект не требует конкретный старый NDK
-      ANDROID_NDK_HOME: ""
-      ANDROID_NDK_LATEST_HOME: ""
+    runs-on: ubuntu-22.04
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
       - name: Set up JDK 11
-        uses: actions/setup-java@v5
+        uses: actions/setup-java@v4
         with:
+          distribution: temurin
           java-version: '11'
-          distribution: 'temurin'
+          cache: gradle
 
-      - name: Cache Gradle
-        uses: actions/cache@v4
+      - name: Set up Android SDK & NDK
+        uses: android-actions/setup-android@v3
         with:
-          path: |
-            ~/.gradle/caches
-            ~/.gradle/wrapper
-          key: ${{ runner.os }}-gradle-${{ hashFiles('**/*.gradle*', '**/gradle-wrapper.properties') }}
-          restore-keys: |
-            ${{ runner.os }}-gradle-
+          cmdline-tools-version: '11.0'
+          packages: |
+            platform-tools
+            platforms;android-28
+            build-tools;28.0.3
+            ndk;21.4.7075529
 
-      - name: Prepare SDK & NDK compatibility
+      - name: Configure local.properties
         run: |
-          # Удаляем путь к несовместимому NDK 27.x из local.properties, если он туда подставляется
-          if [ -f local.properties ]; then
-            sed -i '/^ndk\.dir=/d' local.properties
-          fi
-          # При необходимости можно установить старый NDK (например, 21.4.7075529) через sdkmanager:
-          # yes | sdkmanager --licenses >/dev/null
-          # sdkmanager "ndk;21.4.7075529"
+          cat <<EOF > local.properties
+          sdk.dir=$ANDROID_SDK_ROOT
+          ndk.dir=$ANDROID_NDK_LATEST_HOME
+          EOF
+          cat local.properties
 
       - name: Grant execute permission for gradlew
-        run: chmod +x gradlew
+        run: chmod +x ./gradlew
 
-      - name: Build Debug APK for arm64-v8a
-        run: ./gradlew assembleDebug -Pandroid.injected.abi=arm64-v8a --no-daemon --stacktrace
+      - name: Build APK
+        run: ./gradlew assembleRelease --stacktrace
 
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
-          name: app-arm64-v8a-debug
+          name: app-release
           path: app/build/outputs/apk/**/*.apk
-          if-no-files-found: error
